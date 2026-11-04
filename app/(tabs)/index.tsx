@@ -20,7 +20,6 @@ import {
   getRouteStops,
   getStopEtas,
   lookupRoutes,
-  requestedOperator,
   type RouteDirection,
   type TransitEta,
   type TransitRoute,
@@ -199,8 +198,8 @@ export default function HomeScreen() {
     try {
       const found = await lookupRoutes(input);
       setRouteChoices(found);
-      const preferredOperator = requestedOperator(input);
-      const route = found.find((item) => item.operator === preferredOperator) || found.find((item) => item.operator === "KMB") || found[0];
+      if (found.length > 1) return;
+      const route = found[0];
       if (!route) {
         setError("找不到此路線，請嘗試其他號碼");
         return;

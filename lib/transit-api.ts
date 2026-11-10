@@ -91,6 +91,15 @@ function minutesUntil(eta: string | null | undefined) {
   return Math.max(0, Math.round((timestamp - Date.now()) / 60000));
 }
 
+/** Hide an arrival that has already passed, or an uncheckable stale remark. */
+export function shouldDisplayEta(eta: string | null | undefined, remark = "", now = Date.now()) {
+  if (eta) {
+    const timestamp = Date.parse(eta);
+    return Number.isNaN(timestamp) || timestamp >= now - 30_000;
+  }
+  return Boolean(remark.trim()) && !/即將到達|即將抵達/.test(remark);
+}
+
 async function lookupGmbRoute(route: string): Promise<TransitRoute | null> {
   const regions: Array<"HKI" | "KLN" | "NT"> = ["HKI", "KLN", "NT"];
   const regionalResults = await Promise.allSettled(
@@ -157,7 +166,7 @@ export async function getRouteStops(route: TransitRoute, direction: RouteDirecti
 export async function getStopEtas(route: TransitRoute, direction: RouteDirection, stop: TransitStop): Promise<TransitEta[]> {
   if (route.operator === "GMB") {
     const payload = await fetchJson<ApiEnvelope<GmbEtaPayload>>(`${GMB_BASE}/eta/route-stop/${route.gmbRouteId}/${direction.gmbRouteSeq || 1}/${stop.seq}`);
-    return (payload.data?.eta || []).slice(0, 3).map((row) => ({ etaSeq: row.eta_seq || 0, eta: row.timestamp || null, minutes: row.diff ?? minutesUntil(row.timestamp), destinationTc: direction.destination, destinationEn: direction.destination, remarkTc: row.remarks_tc || "" }));
+    return (payload.data?.eta || []).filter((row) => shouldDisplayEta(row.timestamp, row.remarks_tc || "")).slice(0, 3).map((row) => ({ etaSeq: row.eta_seq || 0, eta: row.timestamp || null, minutes: row.diff ?? minutesUntil(row.timestamp), destinationTc: direction.destination, destinationEn: direction.destination, remarkTc: row.remarks_tc || "" }));
   }
   let rows: KmbEtaRow[] | CityEtaRow[] = [];
   if (route.operator === "KMB") {
@@ -167,7 +176,7 @@ export async function getStopEtas(route: TransitRoute, direction: RouteDirection
     const payload = await fetchJson<ApiEnvelope<CityEtaRow[]>>(`${CITYBUS_BASE}/eta/CTB/${stop.stop}/${encodeURIComponent(route.route)}`);
     rows = payload.data || [];
   }
-  return rows.filter((row) => !row.dir || row.dir === direction.bound).filter((row) => row.eta || row.rmk_tc).sort((a, b) => (a.eta_seq || 0) - (b.eta_seq || 0)).slice(0, 3).map((row) => ({ etaSeq: row.eta_seq || 0, eta: row.eta || null, minutes: minutesUntil(row.eta), destinationTc: row.dest_tc || "目的地資料暫不可用", destinationEn: row.dest_en || "Destination unavailable", remarkTc: row.rmk_tc || "" }));
+  return rows.filter((row) => !row.dir || row.dir === direction.bound).filter((row) => shouldDisplayEta(row.eta, row.rmk_tc || "")).sort((a, b) => (a.eta_seq || 0) - (b.eta_seq || 0)).slice(0, 3).map((row) => ({ etaSeq: row.eta_seq || 0, eta: row.eta || null, minutes: minutesUntil(row.eta), destinationTc: row.dest_tc || "目的地資料暫不可用", destinationEn: row.dest_en || "Destination unavailable", remarkTc: row.rmk_tc || "" }));
 }
 
 export function formatUpdatedAt(value: Date | null) {
